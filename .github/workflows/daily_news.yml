@@ -1,0 +1,76 @@
+name: 📺 Daily YouTube News Bot
+
+on:
+  # ── Automatic daily schedule ──────────────────────────────────────────────
+  # Runs every day at 2:00 AM UTC = 7:30 AM IST
+  # To change time: edit the cron string below
+  # Format: 'minute hour day month weekday'
+  schedule:
+    - cron: '0 2 * * *'
+
+  # ── Manual trigger ────────────────────────────────────────────────────────
+  # Lets you run it anytime from GitHub app → Actions tab → Run workflow
+  workflow_dispatch:
+    inputs:
+      privacy:
+        description: 'Video privacy (public / private / unlisted)'
+        required: false
+        default: 'public'
+
+jobs:
+  post-daily-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30   # Safety: kill if stuck beyond 30 mins
+
+    steps:
+
+      # ── 1. Checkout repo ─────────────────────────────────────────────────
+      - name: 📂 Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ─────────────────────────────────────────────────
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ── 3. Install system deps (FFmpeg for video rendering) ───────────────
+      - name: 🔧 Install FFmpeg + fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      # ── 4. Install Python packages ────────────────────────────────────────
+      - name: 📦 Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── 5. Create output folder ───────────────────────────────────────────
+      - name: 📁 Create output directory
+        run: mkdir -p output
+
+      # ── 6. Fetch news & generate script ──────────────────────────────────
+      - name: 📰 Fetch news & generate script (Claude API)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/fetch_news.py
+
+      # ── 7. Generate voiceover ─────────────────────────────────────────────
+      - name: 🎙️ Generate voiceover (gTTS)
+        run: python scripts/generate_voice.py
+
+      # ── 8. Render video ───────────────────────────────────────────────────
+      - name: 🎬 Render video (MoviePy + FFmpeg)
+        run: python scripts/render_video.py
+
+      # ── 9. Upload to YouTube ──────────────────────────────────────────────
+      - name: 🚀 Upload to YouTube
+        env:
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: python scripts/upload_youtube.py
+
+      # ── 10. Show result ───────────────────────────────────────────────────
+      - name: ✅ Print upload result
+        run: cat output/last_upload.json
